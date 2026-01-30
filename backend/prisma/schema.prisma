@@ -1,0 +1,146 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ── Enums ────────────────────────────────────────────
+
+enum Papel {
+  ADMIN
+  MEMBRO
+}
+
+enum StatusItem {
+  ATIVO
+  CONSUMIDO
+  DESCARTADO
+  VENCIDO
+}
+
+enum TipoMovimentacao {
+  ENTRADA
+  CONSUMO
+  AJUSTE
+  DESCARTE
+}
+
+enum TipoNotificacao {
+  AVISO
+  URGENTE
+  VENCIDO
+}
+
+// ── Tables ───────────────────────────────────────────
+
+model Usuario {
+  id           String   @id @default(uuid())
+  nome         String   @db.VarChar(120)
+  email        String   @unique @db.VarChar(150)
+  senhaHash    String   @map("senha_hash")
+  ativo        Boolean  @default(true)
+  criadoEm     DateTime @default(now()) @map("criado_em")
+  atualizadoEm DateTime @updatedAt @map("atualizado_em")
+
+  estoques     EstoqueUsuario[]
+  notificacoes Notificacao[]
+
+  @@map("usuario")
+}
+
+model Estoque {
+  id           String   @id @default(uuid())
+  nome         String   @db.VarChar(100)
+  descricao    String?
+  criadoEm     DateTime @default(now()) @map("criado_em")
+  atualizadoEm DateTime @updatedAt @map("atualizado_em")
+
+  usuarios EstoqueUsuario[]
+  itens    ItemEstoque[]
+
+  @@map("estoque")
+}
+
+model EstoqueUsuario {
+  id         String   @id @default(uuid())
+  estoqueId  String   @map("estoque_id")
+  usuarioId  String   @map("usuario_id")
+  papel      Papel    @default(MEMBRO)
+  criadoEm   DateTime @default(now()) @map("criado_em")
+
+  estoque Estoque @relation(fields: [estoqueId], references: [id])
+  usuario Usuario @relation(fields: [usuarioId], references: [id])
+
+  @@unique([estoqueId, usuarioId])
+  @@map("estoque_usuario")
+}
+
+model QrCode {
+  id       String   @id @default(uuid())
+  codigo   String   @unique
+  ativo    Boolean  @default(true)
+  criadoEm DateTime @default(now()) @map("criado_em")
+
+  itens ItemEstoque[]
+
+  @@index([codigo])
+  @@map("qr_code")
+}
+
+model ItemEstoque {
+  id            String     @id @default(uuid())
+  estoqueId     String     @map("estoque_id")
+  qrCodeId      String?    @map("qr_code_id")
+  nome          String     @db.VarChar(150)
+  categoria     String?    @db.VarChar(50)
+  quantidade    Decimal    @db.Decimal(10, 2)
+  unidade       String?    @db.VarChar(10)
+  dataCompra    DateTime?  @map("data_compra") @db.Date
+  dataValidade  DateTime?  @map("data_validade") @db.Date
+  localizacao   String?    @db.VarChar(50)
+  status        StatusItem @default(ATIVO)
+  criadoEm      DateTime   @default(now()) @map("criado_em")
+  atualizadoEm  DateTime   @updatedAt @map("atualizado_em")
+  version       Int        @default(1)
+
+  estoque       Estoque          @relation(fields: [estoqueId], references: [id])
+  qrCode        QrCode?          @relation(fields: [qrCodeId], references: [id])
+  movimentacoes MovimentacaoItem[]
+  notificacoes  Notificacao[]
+
+  @@index([dataValidade])
+  @@index([status])
+  @@map("item_estoque")
+}
+
+model MovimentacaoItem {
+  id         String           @id @default(uuid())
+  itemId     String           @map("item_id")
+  tipo       TipoMovimentacao
+  quantidade Decimal          @db.Decimal(10, 2)
+  observacao String?
+  criadoEm   DateTime         @default(now()) @map("criado_em")
+
+  item ItemEstoque @relation(fields: [itemId], references: [id])
+
+  @@index([itemId])
+  @@map("movimentacao_item")
+}
+
+model Notificacao {
+  id        String          @id @default(uuid())
+  usuarioId String          @map("usuario_id")
+  itemId    String          @map("item_id")
+  tipo      TipoNotificacao
+  mensagem  String
+  lida      Boolean         @default(false)
+  criadaEm  DateTime        @default(now()) @map("criada_em")
+
+  usuario Usuario     @relation(fields: [usuarioId], references: [id])
+  item    ItemEstoque @relation(fields: [itemId], references: [id])
+
+  @@map("notificacao")
+}

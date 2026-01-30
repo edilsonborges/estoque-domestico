@@ -1,0 +1,26 @@
+{
+  "expo": {
+    "name": "Estoque Doméstico",
+    "slug": "estoque-domestico",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "estoque-domestico",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "backgroundColor": "#0D9488"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.estoquedomestico.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#0D9488"
+      },
+      "package": "com.estoquedomestico.app"
+    },
+    "plugins": ["expo-router", "expo-secure-store"]
+  }
+}

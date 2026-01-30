@@ -1,0 +1,13 @@
+{
+  "name": "estoque-domestico",
+  "private": true,
+  "workspaces": [
+    "backend",
+    "mobile"
+  ],
+  "scripts": {
+    "backend:dev": "npm run dev --workspace=backend",
+    "backend:test": "npm test --workspace=backend",
+    "mobile:start": "npm start --workspace=mobile"
+  }
+}
