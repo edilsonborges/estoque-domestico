@@ -33,3 +33,7 @@ api.interceptors.response.use(
     return Promise.reject(error);
   },
 );
+
+if (process.env.EXPO_PUBLIC_MOCK_API === 'true') {
+  require('./mock/mockAdapter').installMockAdapter(api);
+}
