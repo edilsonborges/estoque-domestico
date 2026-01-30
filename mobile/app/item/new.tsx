@@ -7,8 +7,26 @@ import { ItemForm } from '../../src/components/ItemForm';
 
 export default function NewItemScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ qr_code_id?: string; estoque_id?: string }>();
+  const params = useLocalSearchParams<{
+    qr_code_id?: string;
+    estoque_id?: string;
+    from_barcode?: string;
+    barcode?: string;
+    nome?: string;
+    categoria?: string;
+    quantidade?: string;
+    unidade?: string;
+  }>();
   const [loading, setLoading] = useState(false);
+
+  const initialData = params.from_barcode
+    ? {
+        nome: params.nome || '',
+        categoria: params.categoria || '',
+        quantidade: params.quantidade || '1',
+        unidade: params.unidade || 'un',
+      }
+    : undefined;
 
   async function handleSubmit(data: {
     nome: string;
@@ -53,8 +71,13 @@ export default function NewItemScreen() {
 
   return (
     <View style={styles.container}>
-      <Stack.Screen options={{ title: 'Novo Item', headerBackTitle: 'Voltar' }} />
-      <ItemForm onSubmit={handleSubmit} loading={loading} />
+      <Stack.Screen
+        options={{
+          title: params.from_barcode ? 'Novo Item (Código de Barras)' : 'Novo Item',
+          headerBackTitle: 'Voltar',
+        }}
+      />
+      <ItemForm onSubmit={handleSubmit} loading={loading} initialData={initialData} />
     </View>
   );
 }
