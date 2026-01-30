@@ -13,13 +13,20 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.estoquedomestico.app"
+      "bundleIdentifier": "com.estoquedomestico.app",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#0D9488"
       },
-      "package": "com.estoquedomestico.app"
+      "package": "com.estoquedomestico.app",
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "plugins": [
       "expo-router",
@@ -30,6 +37,14 @@
           "cameraPermission": "Permitir acesso à câmera para escanear códigos de barras e QR Codes"
         }
       ]
-    ]
+    ],
+    "extra": {
+      "router": {
+        "origin": false
+      },
+      "eas": {
+        "projectId": "8783d183-dedf-463b-a273-fce08c221cfe"
+      }
+    }
   }
 }

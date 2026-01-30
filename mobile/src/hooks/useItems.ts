@@ -1,40 +1,26 @@
-import { useState, useEffect, useCallback } from 'react';
 import { getItens, type ItemEstoque } from '../services/item.service';
+import { useCachedQuery } from './useCachedQuery';
+
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
 interface UseItemsOptions {
   arquivados?: boolean;
 }
 
 export function useItems(estoqueId: string | undefined, options?: UseItemsOptions) {
-  const [items, setItems] = useState<ItemEstoque[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [total, setTotal] = useState(0);
+  const status = options?.arquivados ? 'CONSUMIDO,DESCARTADO' : 'ATIVO';
+  const cacheKey = `items:${estoqueId}:${status}`;
 
-  const fetchItems = useCallback(async () => {
-    if (!estoqueId) {
-      setItems([]);
-      setTotal(0);
-      setLoading(false);
-      return;
-    }
+  const { data, loading, refresh } = useCachedQuery<ItemEstoque[]>(
+    cacheKey,
+    () => getItens(estoqueId!, { status }),
+    { ttl: CACHE_TTL, enabled: !!estoqueId },
+  );
 
-    setLoading(true);
-    try {
-      const status = options?.arquivados ? 'CONSUMIDO,DESCARTADO' : 'ATIVO';
-      const data = await getItens(estoqueId, { status });
-      setItems(data);
-      setTotal(data.length);
-    } catch {
-      setItems([]);
-      setTotal(0);
-    } finally {
-      setLoading(false);
-    }
-  }, [estoqueId, options?.arquivados]);
-
-  useEffect(() => {
-    fetchItems();
-  }, [fetchItems]);
-
-  return { items, loading, refresh: fetchItems, total };
+  return {
+    items: data ?? [],
+    loading,
+    refresh,
+    total: data?.length ?? 0,
+  };
 }

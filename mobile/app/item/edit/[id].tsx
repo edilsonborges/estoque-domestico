@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { View, StyleSheet, Alert, ActivityIndicator } from 'react-native';
 import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
 import { colors } from '../../../src/theme/colors';
@@ -9,31 +9,29 @@ import {
 } from '../../../src/services/item.service';
 import { ItemForm } from '../../../src/components/ItemForm';
 import { VersionConflictDialog } from '../../../src/components/VersionConflictDialog';
+import { useCachedQuery } from '../../../src/hooks/useCachedQuery';
+import { useOfflineMutation } from '../../../src/hooks/useOfflineMutation';
+
+const CACHE_TTL = 5 * 60 * 1000;
 
 export default function EditItemScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
+  const { mutate } = useOfflineMutation<any, ItemEstoque>();
 
-  const [item, setItem] = useState<ItemEstoque | null>(null);
-  const [loading, setLoading] = useState(true);
+  const cacheKey = `item:${id}`;
+  const {
+    data: item,
+    loading,
+    refresh,
+  } = useCachedQuery<ItemEstoque>(
+    cacheKey,
+    () => getItem(id!),
+    { ttl: CACHE_TTL, enabled: !!id },
+  );
+
   const [saving, setSaving] = useState(false);
   const [conflictVisible, setConflictVisible] = useState(false);
-
-  async function fetchItem() {
-    if (!id) return;
-    try {
-      const data = await getItem(id);
-      setItem(data);
-    } catch {
-      Alert.alert('Erro', 'Não foi possível carregar o item.');
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    fetchItem();
-  }, [id]);
 
   async function handleSubmit(data: {
     nome: string;
@@ -51,35 +49,58 @@ export default function EditItemScreen() {
     }
 
     setSaving(true);
-    try {
-      await updateItem(id, {
-        nome: data.nome.trim(),
-        categoria: data.categoria,
-        quantidade: parseFloat(data.quantidade) || item.quantidade,
-        unidade: data.unidade || item.unidade,
-        data_validade: data.data_validade || undefined,
-        localizacao: data.localizacao || undefined,
-        version: item.version,
-      });
 
-      Alert.alert('Sucesso', 'Item atualizado com sucesso!', [
-        { text: 'OK', onPress: () => router.back() },
-      ]);
-    } catch (error: any) {
-      if (error?.response?.status === 409) {
-        setConflictVisible(true);
-      } else {
-        Alert.alert('Erro', 'Não foi possível atualizar o item. Tente novamente.');
-      }
-    } finally {
-      setSaving(false);
-    }
+    const updateData = {
+      nome: data.nome.trim(),
+      categoria: data.categoria,
+      quantidade: parseFloat(data.quantidade) || item.quantidade,
+      unidade: data.unidade || item.unidade,
+      data_validade: data.data_validade || undefined,
+      localizacao: data.localizacao || undefined,
+      version: item.version,
+    };
+
+    await mutate({
+      method: 'PUT',
+      url: `/itens/${id}`,
+      data: updateData,
+      cacheKeys: [cacheKey, `items:${item.estoque_id}:ATIVO`, `dashboard-items:${item.estoque_id}`],
+      description: `Editar ${item.nome}`,
+      optimisticUpdate: {
+        key: cacheKey,
+        updater: (current: ItemEstoque) => ({
+          ...current,
+          nome: data.nome.trim(),
+          categoria: data.categoria,
+          quantidade: parseFloat(data.quantidade) || current.quantidade,
+          unidade: data.unidade || current.unidade,
+          data_validade: data.data_validade || current.data_validade,
+          localizacao: data.localizacao || current.localizacao,
+        }),
+      },
+      onSuccess: () => {
+        setSaving(false);
+        Alert.alert('Sucesso', 'Item atualizado com sucesso!', [
+          { text: 'OK', onPress: () => router.back() },
+        ]);
+      },
+      onError: (error: any) => {
+        setSaving(false);
+        if (error?.response?.status === 409) {
+          setConflictVisible(true);
+        } else {
+          Alert.alert('Erro', 'Não foi possível atualizar o item. Tente novamente.');
+        }
+      },
+    });
+
+    // For offline case, setSaving is handled by mutate completing
+    setSaving(false);
   }
 
   async function handleConflictRefresh() {
     setConflictVisible(false);
-    setLoading(true);
-    await fetchItem();
+    await refresh();
   }
 
   if (loading) {

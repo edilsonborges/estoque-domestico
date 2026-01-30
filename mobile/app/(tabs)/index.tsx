@@ -14,77 +14,68 @@ import { colors } from '../../src/theme/colors';
 import { typography } from '../../src/theme/typography';
 import { spacing } from '../../src/theme/spacing';
 import { useEstoque } from '../../src/hooks/useEstoque';
-import { getItens, getAlertas, type Alerta } from '../../src/services/item.service';
+import { useCachedQuery } from '../../src/hooks/useCachedQuery';
+import { getItens, getAlertas, type ItemEstoque, type Alerta } from '../../src/services/item.service';
 import { SummaryCard } from '../../src/components/SummaryCard';
 import { AlertPreviewList } from '../../src/components/AlertPreviewList';
+
+const ITEMS_TTL = 5 * 60 * 1000;
+const ALERTAS_TTL = 5 * 60 * 1000;
 
 export default function HomeScreen() {
   const router = useRouter();
   const { estoque, loading: estoqueLoading, refresh: refreshEstoque } = useEstoque();
 
-  const [totalAtivos, setTotalAtivos] = useState(0);
-  const [vencendoBreve, setVencendoBreve] = useState(0);
-  const [vencidos, setVencidos] = useState(0);
-  const [alertas, setAlertas] = useState<Alerta[]>([]);
-  const [loadingData, setLoadingData] = useState(true);
+  const estoqueId = estoque?.id;
+
+  const {
+    data: itens,
+    loading: itensLoading,
+    refresh: refreshItens,
+  } = useCachedQuery<ItemEstoque[]>(
+    `dashboard-items:${estoqueId}`,
+    () => getItens(estoqueId!, { status: 'ATIVO' }),
+    { ttl: ITEMS_TTL, enabled: !!estoqueId },
+  );
+
+  const {
+    data: alertasData,
+    loading: alertasLoading,
+    refresh: refreshAlertas,
+  } = useCachedQuery<Alerta[]>(
+    'dashboard-alertas',
+    getAlertas,
+    { ttl: ALERTAS_TTL, enabled: !!estoqueId },
+  );
+
+  const totalAtivos = itens?.length ?? 0;
+  const vencendoBreve = itens?.filter(
+    (i) => i.status_validade === 'ATENCAO' || i.status_validade === 'URGENTE',
+  ).length ?? 0;
+  const vencidos = itens?.filter((i) => i.status_validade === 'VENCIDO').length ?? 0;
+
+  const alertas: Alerta[] = (alertasData ?? []).map((a) => ({
+    id: a.id,
+    nome: a.nome,
+    dias_restantes: a.dias_restantes,
+    status_validade: a.dias_restantes === null
+      ? 'OK'
+      : a.dias_restantes < 0
+        ? 'VENCIDO'
+        : a.dias_restantes <= 1
+          ? 'URGENTE'
+          : a.dias_restantes <= 5
+            ? 'ATENCAO'
+            : 'OK',
+  }));
+
   const [refreshing, setRefreshing] = useState(false);
-
-  const fetchDashboardData = useCallback(async () => {
-    if (!estoque) return;
-
-    try {
-      const [itens, alertasData] = await Promise.all([
-        getItens(estoque.id, { status: 'ATIVO' }),
-        getAlertas(),
-      ]);
-
-      setTotalAtivos(itens.length);
-
-      const expiringCount = itens.filter(
-        (i) => i.status_validade === 'ATENCAO' || i.status_validade === 'URGENTE',
-      ).length;
-      setVencendoBreve(expiringCount);
-
-      const expiredCount = itens.filter((i) => i.status_validade === 'VENCIDO').length;
-      setVencidos(expiredCount);
-
-      setAlertas(
-        alertasData.map((a) => ({
-          id: a.id,
-          nome: a.nome,
-          dias_restantes: a.dias_restantes,
-          status_validade: a.dias_restantes === null
-            ? 'OK'
-            : a.dias_restantes < 0
-              ? 'VENCIDO'
-              : a.dias_restantes <= 1
-                ? 'URGENTE'
-                : a.dias_restantes <= 5
-                  ? 'ATENCAO'
-                  : 'OK',
-        })),
-      );
-    } catch {
-      // Silently handle errors; data stays at defaults
-    } finally {
-      setLoadingData(false);
-    }
-  }, [estoque]);
-
-  useEffect(() => {
-    if (estoque) {
-      fetchDashboardData();
-    } else if (!estoqueLoading) {
-      setLoadingData(false);
-    }
-  }, [estoque, estoqueLoading, fetchDashboardData]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await refreshEstoque();
-    await fetchDashboardData();
+    await Promise.all([refreshEstoque(), refreshItens(), refreshAlertas()]);
     setRefreshing(false);
-  }, [refreshEstoque, fetchDashboardData]);
+  }, [refreshEstoque, refreshItens, refreshAlertas]);
 
   function handleAlertPress(id: string) {
     router.push(`/item/${id}`);
@@ -94,7 +85,9 @@ export default function HomeScreen() {
     router.push('/(tabs)/scan');
   }
 
-  if (estoqueLoading || loadingData) {
+  const loading = estoqueLoading || (!!estoqueId && itensLoading && alertasLoading);
+
+  if (loading) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={colors.primary} />

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -18,79 +18,108 @@ import {
   discardItem,
   type ItemEstoque,
 } from '../../src/services/item.service';
+import { useCachedQuery } from '../../src/hooks/useCachedQuery';
+import { useNetwork } from '../../src/hooks/useNetwork';
+import { useOfflineMutation } from '../../src/hooks/useOfflineMutation';
 import { ItemStatusBanner } from '../../src/components/ItemStatusBanner';
 import { QuickActionButton } from '../../src/components/QuickActionButton';
 import { ConsumeModal } from '../../src/components/ConsumeModal';
 import { DiscardModal } from '../../src/components/DiscardModal';
 import { VersionConflictDialog } from '../../src/components/VersionConflictDialog';
 
+const CACHE_TTL = 5 * 60 * 1000;
+
 export default function ItemDetailScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
+  const { isOnline } = useNetwork();
+  const { mutate } = useOfflineMutation<any, ItemEstoque>();
 
-  const [item, setItem] = useState<ItemEstoque | null>(null);
-  const [loading, setLoading] = useState(true);
+  const cacheKey = `item:${id}`;
+  const {
+    data: item,
+    loading,
+    refresh,
+  } = useCachedQuery<ItemEstoque>(
+    cacheKey,
+    () => getItem(id!),
+    { ttl: CACHE_TTL, enabled: !!id },
+  );
+
   const [refreshing, setRefreshing] = useState(false);
   const [consumeVisible, setConsumeVisible] = useState(false);
   const [discardVisible, setDiscardVisible] = useState(false);
   const [conflictVisible, setConflictVisible] = useState(false);
 
-  const fetchItem = useCallback(async () => {
-    if (!id) return;
-    try {
-      const data = await getItem(id);
-      setItem(data);
-    } catch {
-      Alert.alert('Erro', 'Não foi possível carregar o item.');
-    } finally {
-      setLoading(false);
-    }
-  }, [id]);
-
-  useEffect(() => {
-    fetchItem();
-  }, [fetchItem]);
-
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await fetchItem();
+    await refresh();
     setRefreshing(false);
     setConflictVisible(false);
-  }, [fetchItem]);
+  }, [refresh]);
 
   async function handleConsume(quantidade: number, _observacao: string) {
-    if (!id) return;
-    try {
-      const updated = await consumeItem(id, { quantidade });
-      setItem(updated);
-      setConsumeVisible(false);
-      Alert.alert('Sucesso', 'Consumo registrado!');
-    } catch (error: any) {
-      setConsumeVisible(false);
-      if (error?.response?.status === 409) {
-        setConflictVisible(true);
-      } else {
-        Alert.alert('Erro', 'Não foi possível registrar o consumo.');
-      }
-    }
+    if (!id || !item) return;
+    setConsumeVisible(false);
+
+    await mutate({
+      method: 'POST',
+      url: `/itens/${id}/consumir`,
+      data: { quantidade },
+      cacheKeys: [cacheKey, `items:${item.estoque_id}:ATIVO`, `dashboard-items:${item.estoque_id}`],
+      description: `Consumir ${item.nome}`,
+      optimisticUpdate: {
+        key: cacheKey,
+        updater: (current: ItemEstoque) => ({
+          ...current,
+          quantidade: Math.max(0, current.quantidade - quantidade),
+          status: current.quantidade - quantidade <= 0 ? 'CONSUMIDO' : current.status,
+        }),
+      },
+      onSuccess: () => {
+        Alert.alert('Sucesso', 'Consumo registrado!');
+        refresh();
+      },
+      onError: (error: any) => {
+        if (error?.response?.status === 409) {
+          setConflictVisible(true);
+        } else {
+          Alert.alert('Erro', 'Não foi possível registrar o consumo.');
+        }
+      },
+    });
   }
 
   async function handleDiscard(motivo: string) {
-    if (!id) return;
-    try {
-      await discardItem(id, { motivo });
-      setDiscardVisible(false);
-      Alert.alert('Sucesso', 'Item descartado!', [
-        { text: 'OK', onPress: () => router.back() },
-      ]);
-    } catch (error: any) {
-      setDiscardVisible(false);
-      if (error?.response?.status === 409) {
-        setConflictVisible(true);
-      } else {
-        Alert.alert('Erro', 'Não foi possível descartar o item.');
-      }
-    }
+    if (!id || !item) return;
+    setDiscardVisible(false);
+
+    await mutate({
+      method: 'POST',
+      url: `/itens/${id}/descartar`,
+      data: { motivo },
+      cacheKeys: [cacheKey, `items:${item.estoque_id}:ATIVO`, `dashboard-items:${item.estoque_id}`],
+      description: `Descartar ${item.nome}`,
+      optimisticUpdate: {
+        key: cacheKey,
+        updater: (current: ItemEstoque) => ({
+          ...current,
+          status: 'DESCARTADO',
+        }),
+      },
+      onSuccess: () => {
+        Alert.alert('Sucesso', 'Item descartado!', [
+          { text: 'OK', onPress: () => router.back() },
+        ]);
+      },
+      onError: (error: any) => {
+        if (error?.response?.status === 409) {
+          setConflictVisible(true);
+        } else {
+          Alert.alert('Erro', 'Não foi possível descartar o item.');
+        }
+      },
+    });
   }
 
   function handleEdit() {

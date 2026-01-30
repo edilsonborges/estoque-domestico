@@ -1,30 +1,30 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { getEstoques, type Estoque } from '../services/estoque.service';
+import { useCachedQuery } from './useCachedQuery';
+
+const CACHE_TTL = 10 * 60 * 1000; // 10 minutes
 
 export function useEstoque() {
-  const [estoque, setEstoque] = useState<Estoque | null>(null);
-  const [estoques, setEstoques] = useState<Estoque[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { data: estoques, loading, refresh } = useCachedQuery<Estoque[]>(
+    'estoques',
+    getEstoques,
+    { ttl: CACHE_TTL },
+  );
 
-  const fetchEstoques = useCallback(async () => {
-    setLoading(true);
-    try {
-      const data = await getEstoques();
-      setEstoques(data);
-      if (data.length > 0) {
-        setEstoque(data[0]);
-      }
-    } catch {
-      setEstoques([]);
-      setEstoque(null);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const [estoque, setEstoque] = useState<Estoque | null>(null);
 
   useEffect(() => {
-    fetchEstoques();
-  }, [fetchEstoques]);
+    if (estoques && estoques.length > 0) {
+      setEstoque(estoques[0]);
+    } else {
+      setEstoque(null);
+    }
+  }, [estoques]);
 
-  return { estoque, estoques, loading, refresh: fetchEstoques };
+  return {
+    estoque,
+    estoques: estoques ?? [],
+    loading,
+    refresh,
+  };
 }
